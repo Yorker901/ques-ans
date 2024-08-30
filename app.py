@@ -38,11 +38,12 @@ if uploaded_file is not None:
 
     # Index the document in Elasticsearch
     index = "summarization_pdf"
-    doc = {"text_embedding": emb, "text": text}
+    
 
     try:
         # Update for deprecation warning
         es.options(ignore_status=[400, 404]).indices.delete(index=index)
+        st.success("Index is Deleted!")
         es.indices.create(
             index=index,
             mappings={
@@ -52,11 +53,18 @@ if uploaded_file is not None:
                 }
             }
         )
+        st.success("Index is Created!")
         
     except Exception as e:
         st.error(f"Error indexing document: {e}")
+    print(text)
+    print(emb)
+
+    doc = {"text_embedding": emb, "text": text}
     es.index(index=index, document=doc)
+    es.indices.refresh(index=index)
     st.success("Document indexed successfully!")
+    
 
     # User query input
     query = st.text_input("Enter your question:")
