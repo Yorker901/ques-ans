@@ -1,10 +1,8 @@
 import streamlit as st
-from pypdf import PdfReader
-from sentence_transformers import SentenceTransformer
-from elasticsearch import Elasticsearch
-import requests
-from PIL import Image
+from PyPDF2 import PdfReader
+from pdf2image import convert_from_path
 import io
+from PIL import Image
 
 # Streamlit app title
 st.title("PDF Summarization and Q&A")
@@ -12,14 +10,29 @@ st.title("PDF Summarization and Q&A")
 # PDF Upload and Preview
 uploaded_file = st.file_uploader("Upload a PDF file", type="pdf")
 if uploaded_file:
-    # Display PDF preview (using PIL to render the first page as an image)
-    st.image(uploaded_file, caption="Uploaded PDF", use_column_width=True)
+    # Save uploaded PDF to a temporary file
+    with open("temp.pdf", "wb") as temp_file:
+        temp_file.write(uploaded_file.getbuffer())
     
-    # Read and process PDF
-    reader = PdfReader(uploaded_file)
+    # Convert the first page of the PDF to an image
+    try:
+        images = convert_from_path("temp.pdf", first_page=0, last_page=1)
+        if images:
+            # Display the first page as an image
+            st.image(images[0], caption="Uploaded PDF - Page 1", use_column_width=True)
+        else:
+            st.error("Could not convert the PDF to an image.")
+    except Exception as e:
+        st.error(f"An error occurred while converting the PDF: {e}")
+    
+    # Process the PDF text
+    reader = PdfReader("temp.pdf")
     text = ""
     for page in reader.pages:
         text += page.extract_text()
+    
+    # Continue with the rest of your processing...
+
     
     # Load sentence transformer model
     model = SentenceTransformer('paraphrase-MiniLM-L6-v2')
