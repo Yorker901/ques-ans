@@ -52,6 +52,8 @@ if uploaded_file is not None:
                 }
             }
         )
+        print(text)
+        print(emb)
         es.index(index=index, document=doc)
         st.success("Document indexed successfully!")
     except Exception as e:
@@ -80,6 +82,7 @@ if uploaded_file is not None:
         # Perform search
         try:
             response = es.search(index=index, body=search_query)
+            st.write(response['hits]['hits][0]['_source']['text])
             if response['hits']['hits']:
                 get_text = response['hits']['hits'][0]['_source']['text']
                 st.subheader("Relevant Text:")
