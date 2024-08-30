@@ -27,23 +27,11 @@ if uploaded_file is not None:
         api_key="bDMyb29aRUJmbEtlQzJiSDlEc0M6U3h1Q2t2UEpUc3lxYnBnWUdXaWl0QQ=="  # Replace with your actual API key
     )
 
-    # Test connection
-    try:
-        if es.ping():
-            st.success("Successfully connected to Elasticsearch")
-        else:
-            st.error("Failed to connect to Elasticsearch")
-    except Exception as e:
-        st.error(f"Error connecting to Elasticsearch: {e}")
-
-    # Index the document in Elasticsearch
+    # Create or update the Elasticsearch index
     index = "summarization_pdf"
     
-
     try:
-        # Update for deprecation warning
         es.options(ignore_status=[400, 404]).indices.delete(index=index)
-        st.success("Index is Deleted!")
         es.indices.create(
             index=index,
             mappings={
@@ -53,18 +41,12 @@ if uploaded_file is not None:
                 }
             }
         )
-        st.success("Index is Created!")
-        
     except Exception as e:
-        st.error(f"Error indexing document: {e}")
-    print(text)
-    print(emb)
-
+        st.error(f"Error handling Elasticsearch index: {e}")
+    
     doc = {"text_embedding": emb, "text": text}
     es.index(index=index, document=doc)
     es.indices.refresh(index=index)
-    st.success("Document indexed successfully!")
-    
 
     # User query input
     query = st.text_input("Enter your question:")
