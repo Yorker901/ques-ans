@@ -31,11 +31,17 @@ if uploaded_file is not None and query:
     model = SentenceTransformer('paraphrase-MiniLM-L6-v2')
     emb = model.encode(text)
 
-    # Elasticsearch connection
-    cloud_id = "ac668387facb455d9201540f7bcdccf3:dXMtY2VudHJhbDEuZ2NwLmNsb3VkLmVzLmlvJDM5OGQ1NGMzMzZlZTQ0MGM5MGVjM2VjYmIwYjc0MWRjJGQ4NDgxNTA2MWM1NDQwYjA4YmE3NTAxMGQ1YzM3MGJl"
+    # # Elasticsearch connection
+    # cloud_id = "ac668387facb455d9201540f7bcdccf3:dXMtY2VudHJhbDEuZ2NwLmNsb3VkLmVzLmlvJDM5OGQ1NGMzMzZlZTQ0MGM5MGVjM2VjYmIwYjc0MWRjJGQ4NDgxNTA2MWM1NDQwYjA4YmE3NTAxMGQ1YzM3MGJl"
+    # es = Elasticsearch(
+    #     cloud_id=cloud_id,
+    #     basic_auth=("your_username", "your_password")  # Replace with your actual username and password
+    # )
+
+
     es = Elasticsearch(
-        cloud_id=cloud_id,
-        basic_auth=("your_username", "your_password")  # Replace with your actual username and password
+    cloud_id="ac668387facb455d9201540f7bcdccf3:dXMtY2VudHJhbDEuZ2NwLmNsb3VkLmVzLmlvJDM5OGQ1NGMzMzZlZTQ0MGM5MGVjM2VjYmIwYjc0MWRjJGQ4NDgxNTA2MWM1NDQwYjA4YmE3NTAxMGQ1YzM3MGJl",
+    api_key="SxuCkvPJTsyqbpgYGWiitA"
     )
 
     # Index creation (if it doesn't exist)
