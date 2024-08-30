@@ -17,10 +17,6 @@ if uploaded_file is not None:
     for page in reader.pages:
         text += page.extract_text()
 
-    # Display the extracted text
-    st.subheader("Extracted Text:")
-    st.write(text)
-
     # Load sentence transformer model
     model = SentenceTransformer('paraphrase-MiniLM-L6-v2')
     emb = model.encode(text)
