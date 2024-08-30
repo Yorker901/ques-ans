@@ -28,7 +28,7 @@ if uploaded_file is not None:
     # Elasticsearch connection (using API key)
     es = Elasticsearch(
         cloud_id="ac668387facb455d9201540f7bcdccf3:dXMtY2VudHJhbDEuZ2NwLmNsb3VkLmVzLmlvJDM5OGQ1NGMzMzZlZTQ0MGM5MGVjM2VjYmIwYjc0MWRjJGQ4NDgxNTA2MWM1NDQwYjA4YmE3NTAxMGQ1YzM3MGJl",
-        api_key="SxuCkvPJTsyqbpgYGWiitA"  # Replace with your actual API key
+        api_key="bDMyb29aRUJmbEtlQzJiSDlEc0M6U3h1Q2t2UEpUc3lxYnBnWUdXaWl0QQ=="  # Replace with your actual API key
     )
 
     # Test connection
