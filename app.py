@@ -52,10 +52,11 @@ if uploaded_file is not None:
                 }
             }
         )
-        es.index(index=index, document=doc)
-        st.success("Document indexed successfully!")
+        
     except Exception as e:
         st.error(f"Error indexing document: {e}")
+    es.index(index=index, document=doc)
+    st.success("Document indexed successfully!")
 
     # User query input
     query = st.text_input("Enter your question:")
