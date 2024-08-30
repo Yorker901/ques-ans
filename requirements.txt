@@ -1,6 +1,7 @@
 streamlit
 pypdf
 PyPDF2
+pdf2image
 sentence-transformers
 elasticsearch
 requests
