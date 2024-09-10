@@ -3,28 +3,31 @@ from pypdf import PdfReader
 from sentence_transformers import SentenceTransformer
 from elasticsearch import Elasticsearch
 import requests
+import os
 
 # Streamlit app title
 st.title("QuerySage")
 
-# File upload
-uploaded_file = st.file_uploader("Upload a PDF file", type="pdf")
+# File upload allowing multiple files
+uploaded_files = st.file_uploader("Upload PDF files", type="pdf", accept_multiple_files=True)
 
-if uploaded_file is not None:
-    # Read the PDF
-    reader = PdfReader(uploaded_file)
-    text = ""
-    for page in reader.pages:
-        text += page.extract_text()
+if uploaded_files:
+    all_text = ""
+
+    # Read and combine text from all uploaded PDFs
+    for uploaded_file in uploaded_files:
+        reader = PdfReader(uploaded_file)
+        for page in reader.pages:
+            all_text += page.extract_text()
 
     # Load sentence transformer model
     model = SentenceTransformer('paraphrase-MiniLM-L6-v2')
-    emb = model.encode(text)
+    emb = model.encode(all_text)
 
-    # Elasticsearch connection (using API key)
+    # Elasticsearch connection (using API key stored in Streamlit secrets)
     es = Elasticsearch(
-        cloud_id="ac668387facb455d9201540f7bcdccf3:dXMtY2VudHJhbDEuZ2NwLmNsb3VkLmVzLmlvJDM5OGQ1NGMzMzZlZTQ0MGM5MGVjM2VjYmIwYjc0MWRjJGQ4NDgxNTA2MWM1NDQwYjA4YmE3NTAxMGQ1YzM3MGJl",
-        api_key="bDMyb29aRUJmbEtlQzJiSDlEc0M6U3h1Q2t2UEpUc3lxYnBnWUdXaWl0QQ=="  # Replace with your actual API key
+        cloud_id=st.secrets["ELASTIC_CLOUD_ID"],  # Stored in Streamlit secrets
+        api_key=st.secrets["ELASTIC_API_KEY"]     # Stored in Streamlit secrets
     )
 
     # Create or update the Elasticsearch index
@@ -44,7 +47,7 @@ if uploaded_file is not None:
     except Exception as e:
         st.error(f"Error handling Elasticsearch index: {e}")
     
-    doc = {"text_embedding": emb, "text": text}
+    doc = {"text_embedding": emb, "text": all_text}
     es.index(index=index, document=doc)
     es.indices.refresh(index=index)
 
@@ -72,14 +75,13 @@ if uploaded_file is not None:
         try:
             response = es.search(index=index, body=search_query)
             if response['hits']['hits']:
+                # Do not display relevant text on frontend
                 get_text = response['hits']['hits'][0]['_source']['text']
-                st.subheader("Relevant Text:")
-                st.write(get_text)
 
                 # Query Mistral AI model to get the answer
                 def query_mistral(payload):
                     API_URL = "https://api-inference.huggingface.co/models/mistralai/Mixtral-8x7B-Instruct-v0.1"
-                    API_TOKEN = "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"
+                    API_TOKEN = st.secrets["HUGGINGFACE_API_KEY"]  # Stored in Streamlit secrets
                     headers = {"Authorization": f"Bearer {API_TOKEN}"}
                     response = requests.post(API_URL, headers=headers, json=payload)
                     
@@ -98,7 +100,7 @@ if uploaded_file is not None:
                         return f"Value error: {e}"
 
                 negResponse = "I'm unable to answer the question based on the information I have."
-                prompt = f"[INST] You are a helpful Q&A assistant. Your task is to answer this question: {query}. Use only the information from this text: {get_text}. Provide the answer in noramal text format. If the answer is not contained in the text, reply with {negResponse}. [/INST]"
+                prompt = f"[INST] You are a helpful Q&A assistant. Your task is to answer this question: {query}. Use only the information from this text: {get_text}. Provide the answer in normal text format. If the answer is not contained in the text, reply with {negResponse}. [/INST]"
                 max_new_tokens = 2000
 
                 # Get the answer
@@ -111,4 +113,4 @@ if uploaded_file is not None:
             st.error(f"Error during search or Mistral AI query: {e}")
 
 else:
-    st.info("Please upload a PDF file to start.")
+    st.info("Please upload PDF files to start.")
