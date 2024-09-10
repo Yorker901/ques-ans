@@ -8,14 +8,7 @@ import requests
 st.title("QuerySage")
 
 # File upload
-uploaded_files = st.file_uploader("Upload PDF files", type="pdf", accept_multiple_files=True)
-
-# Check if any files have been uploaded
-if uploaded_files:
-    for uploaded_file in uploaded_files:
-        # Process each uploaded file
-        st.write(f"Processing file: {uploaded_file.name}")
-        # Add your file processing logic here
+uploaded_file = st.file_uploader("Upload a PDF file", type="pdf")
 
 if uploaded_file is not None:
     # Read the PDF
