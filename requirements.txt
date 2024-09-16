@@ -5,3 +5,4 @@ pdf2image
 sentence-transformers
 elasticsearch
 requests
+youtube-transcript-api
