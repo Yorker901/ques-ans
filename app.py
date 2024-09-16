@@ -116,7 +116,6 @@
 #     st.info("Please upload PDF files to start.")
 
 
-
 import streamlit as st
 from pypdf import PdfReader
 from sentence_transformers import SentenceTransformer
@@ -124,35 +123,7 @@ from elasticsearch import Elasticsearch
 import requests
 import re
 from youtube_transcript_api import YouTubeTranscriptApi
-from youtube_transcript_api._errors import TranscriptNotFound, VideoUnavailable
-
-# Updated Function to get YouTube transcript with error handling
-def get_youtube_transcript(video_url):
-    try:
-        # Extract the video ID using regex
-        video_id = re.search(r'v=([a-zA-Z0-9_-]+)', video_url).group(1)
-
-        # Fetch the transcript
-        transcript = YouTubeTranscriptApi.get_transcript(video_id)
-        transcript_text = ' '.join([entry['text'] for entry in transcript])
-        return transcript_text
-
-    except TranscriptNotFound:
-        st.error("Could not retrieve transcript. Subtitles are disabled for this video.")
-        return None
-
-    except VideoUnavailable:
-        st.error("This video is unavailable or restricted. Please try another video.")
-        return None
-
-    except re.error:
-        st.error("Invalid YouTube URL. Please enter a correct URL.")
-        return None
-
-    except Exception as e:
-        st.error(f"An unexpected error occurred: {e}")
-        return None
-
+from youtube_transcript_api.exceptions import TranscriptNotFound, VideoUnavailable
 
 # Streamlit app title
 st.title("QuerySage")
@@ -172,9 +143,7 @@ def extract_text_from_pdfs(uploaded_files):
             all_text += page.extract_text()
     return all_text
 
-# Function to get YouTube transcript
-
-# Updated Function to get YouTube transcript with error handling
+# Function to get YouTube transcript with error handling
 def get_youtube_transcript(video_url):
     try:
         # Extract the video ID using regex
@@ -200,8 +169,6 @@ def get_youtube_transcript(video_url):
     except Exception as e:
         st.error(f"An unexpected error occurred: {e}")
         return None
-
-
 
 # Function to interact with Mistral AI
 def query_mistral(payload):
@@ -304,11 +271,9 @@ elif source_option == "YouTube Video":
     youtube_url = st.text_input("Enter YouTube Video URL:")
 
     if youtube_url:
-        try:
-            # Extract transcript
-            transcript_text = get_youtube_transcript(youtube_url)
-
-
+        transcript_text = get_youtube_transcript(youtube_url)
+        
+        if transcript_text:
             # Encode the transcript text
             emb = model.encode(transcript_text)
 
@@ -351,8 +316,8 @@ elif source_option == "YouTube Video":
                         st.error("No relevant text found for the query.")
                 except Exception as e:
                     st.error(f"Error during search or Mistral AI query: {e}")
-        except Exception as e:
-            st.error(f"Error retrieving YouTube transcript: {e}")
+        else:
+            st.info("Could not retrieve the transcript. Please check the video URL or try another video.")
 
 else:
     st.info("Please upload PDF files or enter a YouTube video URL to start.")
