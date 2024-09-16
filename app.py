@@ -122,9 +122,8 @@ from pypdf import PdfReader
 from sentence_transformers import SentenceTransformer
 from elasticsearch import Elasticsearch
 import requests
-import os
-from youtube_transcript_api import YouTubeTranscriptApi
 import re
+from youtube_transcript_api import YouTubeTranscriptApi
 
 # Streamlit app title
 st.title("QuerySage")
@@ -135,6 +134,7 @@ model = SentenceTransformer('paraphrase-MiniLM-L6-v2')
 # File upload allowing multiple files
 uploaded_files = st.file_uploader("Upload PDF files", type="pdf", accept_multiple_files=True)
 
+# Function to extract text from PDFs
 def extract_text_from_pdfs(uploaded_files):
     all_text = ""
     for uploaded_file in uploaded_files:
@@ -143,6 +143,7 @@ def extract_text_from_pdfs(uploaded_files):
             all_text += page.extract_text()
     return all_text
 
+# Function to get YouTube transcript
 def get_youtube_transcript(video_url):
     video_id = re.search(r'v=([a-zA-Z0-9_-]+)', video_url).group(1)
     transcript = YouTubeTranscriptApi.get_transcript(video_id)
@@ -298,3 +299,6 @@ elif source_option == "YouTube Video":
                     st.error(f"Error during search or Mistral AI query: {e}")
         except Exception as e:
             st.error(f"Error retrieving YouTube transcript: {e}")
+
+else:
+    st.info("Please upload PDF files or enter a YouTube video URL to start.")
