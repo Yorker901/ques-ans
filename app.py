@@ -143,6 +143,8 @@ def extract_text_from_pdfs(uploaded_files):
             all_text += page.extract_text()
     return all_text
 
+from youtube_transcript_api import YouTubeTranscriptApi
+
 # Function to get YouTube transcript
 def get_youtube_transcript(video_url):
     video_id = re.search(r'v=([a-zA-Z0-9_-]+)', video_url).group(1)
@@ -150,10 +152,8 @@ def get_youtube_transcript(video_url):
         transcript = YouTubeTranscriptApi.get_transcript(video_id)
         transcript_text = ' '.join([entry['text'] for entry in transcript])
         return transcript_text
-    except YouTubeTranscriptApiException as e:
-        return f"Error retrieving transcript: {str(e)}"
     except Exception as e:
-        return f"An unexpected error occurred: {str(e)}"
+        return f"Error retrieving transcript: {str(e)}"
 
 
 # Function to interact with Mistral AI
