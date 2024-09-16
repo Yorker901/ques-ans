@@ -6,3 +6,4 @@ sentence-transformers
 elasticsearch
 requests
 youtube-transcript-api
+youtube_transcript_api._errors
