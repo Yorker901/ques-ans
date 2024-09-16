@@ -1,9 +1,6 @@
-streamlit
-pypdf
-PyPDF2
-pdf2image
-sentence-transformers
-elasticsearch
-requests
-youtube-transcript-api
-youtube_transcript_api._errors
+streamlit==1.17.0
+pypdf==3.9.1
+sentence-transformers==2.2.2
+elasticsearch==8.10.2
+requests==2.28.2
+youtube-transcript-api==0.5.0
