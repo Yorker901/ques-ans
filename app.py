@@ -254,6 +254,7 @@ elif source_option == "YouTube Video":
         try:
             # Extract transcript
             # transcript_text = get_youtube_transcript(youtube_url)
+            video_id = eIho2S0ZahI
             transcript_text = YouTubeTranscriptApi.get_transcript(video_id, languages=['en'])
 
 
