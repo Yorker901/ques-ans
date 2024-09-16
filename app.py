@@ -124,6 +124,35 @@ from elasticsearch import Elasticsearch
 import requests
 import re
 from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api._errors import TranscriptNotFound, VideoUnavailable
+
+# Updated Function to get YouTube transcript with error handling
+def get_youtube_transcript(video_url):
+    try:
+        # Extract the video ID using regex
+        video_id = re.search(r'v=([a-zA-Z0-9_-]+)', video_url).group(1)
+
+        # Fetch the transcript
+        transcript = YouTubeTranscriptApi.get_transcript(video_id)
+        transcript_text = ' '.join([entry['text'] for entry in transcript])
+        return transcript_text
+
+    except TranscriptNotFound:
+        st.error("Could not retrieve transcript. Subtitles are disabled for this video.")
+        return None
+
+    except VideoUnavailable:
+        st.error("This video is unavailable or restricted. Please try another video.")
+        return None
+
+    except re.error:
+        st.error("Invalid YouTube URL. Please enter a correct URL.")
+        return None
+
+    except Exception as e:
+        st.error(f"An unexpected error occurred: {e}")
+        return None
+
 
 # Streamlit app title
 st.title("QuerySage")
