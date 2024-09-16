@@ -151,8 +151,9 @@ def get_youtube_transcript(video_url):
         transcript_text = ' '.join([entry['text'] for entry in transcript])
         return transcript_text
     except Exception as e:
-        # Return a message or handle the error
+        # Handle the error by returning a specific message
         return f"Error retrieving transcript: {str(e)}"
+
 
 
 # Function to interact with Mistral AI
