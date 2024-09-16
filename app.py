@@ -123,7 +123,6 @@ from elasticsearch import Elasticsearch
 import requests
 import re
 from youtube_transcript_api import YouTubeTranscriptApi
-from youtube_transcript_api.exceptions import TranscriptNotFound, VideoUnavailable
 
 # Streamlit app title
 st.title("QuerySage")
@@ -143,7 +142,6 @@ def extract_text_from_pdfs(uploaded_files):
             all_text += page.extract_text()
     return all_text
 
-from youtube_transcript_api import YouTubeTranscriptApi
 
 # Function to get YouTube transcript
 def get_youtube_transcript(video_url):
@@ -153,6 +151,7 @@ def get_youtube_transcript(video_url):
         transcript_text = ' '.join([entry['text'] for entry in transcript])
         return transcript_text
     except Exception as e:
+        # Return a message or handle the error
         return f"Error retrieving transcript: {str(e)}"
 
 
