@@ -144,11 +144,33 @@ def extract_text_from_pdfs(uploaded_files):
     return all_text
 
 # Function to get YouTube transcript
+# Updated Function to get YouTube transcript with error handling
 def get_youtube_transcript(video_url):
-    video_id = re.search(r'v=([a-zA-Z0-9_-]+)', video_url).group(1)
-    transcript = YouTubeTranscriptApi.get_transcript(video_id)
-    transcript_text = ' '.join([entry['text'] for entry in transcript])
-    return transcript_text
+    try:
+        # Extract the video ID using regex
+        video_id = re.search(r'v=([a-zA-Z0-9_-]+)', video_url).group(1)
+
+        # Fetch the transcript
+        transcript = YouTubeTranscriptApi.get_transcript(video_id)
+        transcript_text = ' '.join([entry['text'] for entry in transcript])
+        return transcript_text
+
+    except YouTubeTranscriptApi.CouldNotRetrieveTranscript:
+        st.error("Could not retrieve transcript. Subtitles are disabled for this video.")
+        return None
+
+    except YouTubeTranscriptApi.VideoUnavailable:
+        st.error("This video is unavailable or restricted. Please try another video.")
+        return None
+
+    except re.error:
+        st.error("Invalid YouTube URL. Please enter a correct URL.")
+        return None
+
+    except Exception as e:
+        st.error(f"An unexpected error occurred: {e}")
+        return None
+
 
 # Function to interact with Mistral AI
 def query_mistral(payload):
