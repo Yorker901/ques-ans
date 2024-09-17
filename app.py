@@ -130,6 +130,12 @@ st.title("QuerySage")
 # Initialize the Sentence Transformer model
 model = SentenceTransformer('paraphrase-MiniLM-L6-v2')
 
+# Elasticsearch connection (using API key stored in Streamlit secrets)
+es = Elasticsearch(
+    cloud_id=st.secrets["ELASTIC_CLOUD_ID"],  # Stored in Streamlit secrets
+    api_key=st.secrets["ELASTIC_API_KEY"]     # Stored in Streamlit secrets
+)
+
 # File upload allowing multiple files
 uploaded_files = st.file_uploader("Upload PDF files", type="pdf", accept_multiple_files=True)
 
@@ -142,7 +148,6 @@ def extract_text_from_pdfs(uploaded_files):
             all_text += page.extract_text()
     return all_text
 
-
 # Function to get YouTube transcript
 def get_youtube_transcript(video_url):
     video_id = re.search(r'v=([a-zA-Z0-9_-]+)', video_url).group(1)
@@ -154,7 +159,29 @@ def get_youtube_transcript(video_url):
         # Handle the error by returning a specific message
         return f"Error retrieving transcript: {str(e)}"
 
+# Function to create embeddings and post to Elasticsearch for YouTube videos
+def post_transcript_to_elasticsearch(video_url, index_name="youtube_transcripts"):
+    transcript_text = get_youtube_transcript(video_url)
+    
+    if "Error" in transcript_text:
+        return transcript_text
+    
+    # Generate embeddings
+    transcript_embedding = model.encode(transcript_text)
 
+    # Create the document to index
+    doc = {
+        "text": transcript_text,
+        "text_embedding": transcript_embedding.tolist()  # Convert the embedding to a list for Elasticsearch
+    }
+
+    # Index the document into Elasticsearch
+    try:
+        response = es.index(index=index_name, document=doc)
+        return f"Document indexed successfully: {response['_id']}"
+    
+    except Exception as e:
+        return f"Error indexing document: {str(e)}"
 
 # Function to interact with Mistral AI
 def query_mistral(payload):
@@ -177,13 +204,7 @@ def query_mistral(payload):
     except ValueError as e:
         return f"Value error: {e}"
 
-# Elasticsearch connection (using API key stored in Streamlit secrets)
-es = Elasticsearch(
-    cloud_id=st.secrets["ELASTIC_CLOUD_ID"],  # Stored in Streamlit secrets
-    api_key=st.secrets["ELASTIC_API_KEY"]     # Stored in Streamlit secrets
-)
-
-# Create or update the Elasticsearch index
+# Create or update the Elasticsearch index for PDFs
 index = "summarization_pdf"
 try:
     es.options(ignore_status=[400, 404]).indices.delete(index=index)
@@ -257,17 +278,13 @@ elif source_option == "YouTube Video":
     youtube_url = st.text_input("Enter YouTube Video URL:")
 
     if youtube_url:
-        transcript_text = get_youtube_transcript(youtube_url)
-        
-        if transcript_text:
-            # Encode the transcript text
-            emb = model.encode(transcript_text)
+        # Call the function to fetch the transcript and store it in Elasticsearch
+        result = post_transcript_to_elasticsearch(youtube_url)
 
-            # Index the transcript into Elasticsearch
-            doc = {"text_embedding": emb, "text": transcript_text}
-            es.index(index=index, document=doc)
-            es.indices.refresh(index=index)
-
+        if "Error" in result:
+            st.error(result)
+        else:
+            st.success(result)
             query = st.text_input("Enter your question based on the YouTube video:")
 
             if query:
@@ -287,7 +304,7 @@ elif source_option == "YouTube Video":
                 }
 
                 try:
-                    response = es.search(index=index, body=search_query)
+                    response = es.search(index="youtube_transcripts", body=search_query)
                     if response['hits']['hits']:
                         get_text = response['hits']['hits'][0]['_source']['text']
 
@@ -302,8 +319,5 @@ elif source_option == "YouTube Video":
                         st.error("No relevant text found for the query.")
                 except Exception as e:
                     st.error(f"Error during search or Mistral AI query: {e}")
-        else:
-            st.info("Could not retrieve the transcript. Please check the video URL or try another video.")
-
-else:
-    st.info("Please upload PDF files or enter a YouTube video URL to start.")
+    else:
+        st.info("Please enter a valid YouTube video URL.")
