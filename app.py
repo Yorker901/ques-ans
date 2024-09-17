@@ -121,13 +121,14 @@ from pypdf import PdfReader
 from sentence_transformers import SentenceTransformer
 from elasticsearch import Elasticsearch
 import requests
-import re
+import os
 from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api.formatters import JSONFormatter
 
 # Streamlit app title
 st.title("QuerySage")
 
-# Initialize the Sentence Transformer model
+# Load sentence transformer model
 model = SentenceTransformer('paraphrase-MiniLM-L6-v2')
 
 # Elasticsearch connection (using API key stored in Streamlit secrets)
@@ -136,188 +137,169 @@ es = Elasticsearch(
     api_key=st.secrets["ELASTIC_API_KEY"]     # Stored in Streamlit secrets
 )
 
-# File upload allowing multiple files
+# Index names
+pdf_index = "summarization_pdf"
+youtube_index = "youtube_transcripts"
+
+# File upload handling
 uploaded_files = st.file_uploader("Upload PDF files", type="pdf", accept_multiple_files=True)
 
-# Function to extract text from PDFs
-def extract_text_from_pdfs(uploaded_files):
+if uploaded_files:
     all_text = ""
+
+    # Read and combine text from all uploaded PDFs
     for uploaded_file in uploaded_files:
         reader = PdfReader(uploaded_file)
         for page in reader.pages:
             all_text += page.extract_text()
-    return all_text
 
-# Function to get YouTube transcript
-def get_youtube_transcript(video_url):
-    video_id = re.search(r'v=([a-zA-Z0-9_-]+)', video_url).group(1)
-    try:
-        transcript = YouTubeTranscriptApi.get_transcript(video_id)
-        transcript_text = ' '.join([entry['text'] for entry in transcript])
-        return transcript_text
-    except Exception as e:
-        # Handle the error by returning a specific message
-        return f"Error retrieving transcript: {str(e)}"
-
-# Function to create embeddings and post to Elasticsearch for YouTube videos
-def post_transcript_to_elasticsearch(video_url, index_name="youtube_transcripts"):
-    transcript_text = get_youtube_transcript(video_url)
-    
-    if "Error" in transcript_text:
-        return transcript_text
-    
-    # Generate embeddings
-    transcript_embedding = model.encode(transcript_text)
-
-    # Create the document to index
-    doc = {
-        "text": transcript_text,
-        "text_embedding": transcript_embedding.tolist()  # Convert the embedding to a list for Elasticsearch
-    }
-
-    # Index the document into Elasticsearch
-    try:
-        response = es.index(index=index_name, document=doc)
-        return f"Document indexed successfully: {response['_id']}"
-    
-    except Exception as e:
-        return f"Error indexing document: {str(e)}"
-
-# Function to interact with Mistral AI
-def query_mistral(payload):
-    API_URL = "https://api-inference.huggingface.co/models/mistralai/Mixtral-8x7B-Instruct-v0.1"
-    API_TOKEN = st.secrets["HUGGINGFACE_API_KEY"]  # Stored in Streamlit secrets
-    headers = {"Authorization": f"Bearer {API_TOKEN}"}
-    response = requests.post(API_URL, headers=headers, json=payload)
-    
-    try:
-        if response.status_code != 200:
-            return "Error: Unable to get response from the AI model."
-        data = response.json()
-        generated_text = data[0]['generated_text']
-        prompt_index = generated_text.find('[/INST]')
-        if prompt_index != -1:
-            generated_text = generated_text[prompt_index + len('[/INST]'):]
-        return generated_text
-    except requests.exceptions.RequestException as e:
-        return f"Request exception: {e}"
-    except ValueError as e:
-        return f"Value error: {e}"
-
-# Create or update the Elasticsearch index for PDFs
-index = "summarization_pdf"
-try:
-    es.options(ignore_status=[400, 404]).indices.delete(index=index)
-    es.indices.create(
-        index=index,
-        mappings={
-            "properties": {
-                "text": {"type": "text"},
-                "text_embedding": {"type": "dense_vector", "dims": 384},
-            }
-        }
-    )
-except Exception as e:
-    st.error(f"Error handling Elasticsearch index: {e}")
-
-# Input options for user
-source_option = st.radio("Choose your source", ("Upload PDFs", "YouTube Video"))
-
-# For PDF file upload
-if source_option == "Upload PDFs" and uploaded_files:
-    all_text = extract_text_from_pdfs(uploaded_files)
-
-    # Encode the text with the sentence transformer model
     emb = model.encode(all_text)
 
-    # Index the document into Elasticsearch
+    # Create or update Elasticsearch index for PDFs
+    try:
+        es.options(ignore_status=[400, 404]).indices.delete(index=pdf_index)
+        es.indices.create(
+            index=pdf_index,
+            mappings={
+                "properties": {
+                    "text": {"type": "text"},
+                    "text_embedding": {"type": "dense_vector", "dims": 384},
+                }
+            }
+        )
+    except Exception as e:
+        st.error(f"Error handling Elasticsearch index for PDFs: {e}")
+
     doc = {"text_embedding": emb, "text": all_text}
-    es.index(index=index, document=doc)
-    es.indices.refresh(index=index)
+    es.index(index=pdf_index, document=doc)
+    es.indices.refresh(index=pdf_index)
 
-    # User query input
-    query = st.text_input("Enter your question based on PDFs:")
+# YouTube URL input
+youtube_url = st.text_input("Enter YouTube URL:")
 
-    if query:
-        query_emb = model.encode(query)
+if youtube_url:
+    video_id = youtube_url.split('v=')[-1].split('&')[0]
 
-        # Search query
-        search_query = {
-            "query": {
-                "script_score": {
-                    "query": {"match_all": {}},
-                    "script": {
-                        "source": "cosineSimilarity(params.query_vector, 'text_embedding') + 1.0",
-                        "params": {"query_vector": query_emb}
+    try:
+        transcript = YouTubeTranscriptApi.get_transcript(video_id)
+        formatter = JSONFormatter()
+        transcript_json = formatter.format_transcript(transcript)
+        transcript_text = " ".join([entry['text'] for entry in transcript])
+
+        emb = model.encode(transcript_text)
+
+        # Create or update Elasticsearch index for YouTube transcripts
+        try:
+            es.options(ignore_status=[400, 404]).indices.delete(index=youtube_index)
+            es.indices.create(
+                index=youtube_index,
+                mappings={
+                    "properties": {
+                        "text": {"type": "text"},
+                        "text_embedding": {"type": "dense_vector", "dims": 384},
                     }
                 }
-            },
-            "size": 1
-        }
-
-        # Perform search
-        try:
-            response = es.search(index=index, body=search_query)
-            if response['hits']['hits']:
-                get_text = response['hits']['hits'][0]['_source']['text']
-
-                negResponse = "I'm unable to answer the question based on the information I have."
-                prompt = f"[INST] You are a helpful Q&A assistant. Your task is to answer this question: {query}. Use only the information from this text: {get_text}. Provide the answer in normal text format. If the answer is not contained in the text, reply with {negResponse}. [/INST]"
-                max_new_tokens = 2000
-
-                data = query_mistral({"parameters": {"max_new_tokens": max_new_tokens}, "inputs": prompt})
-                st.subheader("Answer:")
-                st.write(data)
-            else:
-                st.error("No relevant text found for the query.")
+            )
         except Exception as e:
-            st.error(f"Error during search or Mistral AI query: {e}")
+            st.error(f"Error handling Elasticsearch index for YouTube transcripts: {e}")
 
-# For YouTube video input
-elif source_option == "YouTube Video":
-    youtube_url = st.text_input("Enter YouTube Video URL:")
+        doc = {"text_embedding": emb, "text": transcript_text}
+        es.index(index=youtube_index, document=doc)
+        es.indices.refresh(index=youtube_index)
 
-    if youtube_url:
-        # Call the function to fetch the transcript and store it in Elasticsearch
-        result = post_transcript_to_elasticsearch(youtube_url)
+        st.success("YouTube transcript has been processed and stored.")
 
-        if "Error" in result:
-            st.error(result)
-        else:
-            st.success(result)
-            query = st.text_input("Enter your question based on the YouTube video:")
+    except Exception as e:
+        st.error(f"Error fetching YouTube transcript: {e}")
 
-            if query:
-                query_emb = model.encode(query)
+# User query input
+query = st.text_input("Enter your question:")
 
-                search_query = {
-                    "query": {
-                        "script_score": {
-                            "query": {"match_all": {}},
-                            "script": {
-                                "source": "cosineSimilarity(params.query_vector, 'text_embedding') + 1.0",
-                                "params": {"query_vector": query_emb}
-                            }
-                        }
-                    },
-                    "size": 1
+if query:
+    query_emb = model.encode(query)
+
+    # Search in PDF index
+    search_query_pdf = {
+        "query": {
+            "script_score": {
+                "query": {"match_all": {}},
+                "script": {
+                    "source": "cosineSimilarity(params.query_vector, 'text_embedding') + 1.0",
+                    "params": {"query_vector": query_emb}
                 }
+            }
+        },
+        "size": 1
+    }
 
-                try:
-                    response = es.search(index="youtube_transcripts", body=search_query)
-                    if response['hits']['hits']:
-                        get_text = response['hits']['hits'][0]['_source']['text']
+    # Perform search in PDF index
+    try:
+        response_pdf = es.search(index=pdf_index, body=search_query_pdf)
+        if response_pdf['hits']['hits']:
+            get_text = response_pdf['hits']['hits'][0]['_source']['text']
+        else:
+            get_text = ""
 
-                        negResponse = "I'm unable to answer the question based on the information I have."
-                        prompt = f"[INST] You are a helpful Q&A assistant. Your task is to answer this question: {query}. Use only the information from this text: {get_text}. Provide the answer in normal text format. If the answer is not contained in the text, reply with {negResponse}. [/INST]"
-                        max_new_tokens = 2000
+    except Exception as e:
+        st.error(f"Error during PDF search: {e}")
+        get_text = ""
 
-                        data = query_mistral({"parameters": {"max_new_tokens": max_new_tokens}, "inputs": prompt})
-                        st.subheader("Answer:")
-                        st.write(data)
-                    else:
-                        st.error("No relevant text found for the query.")
-                except Exception as e:
-                    st.error(f"Error during search or Mistral AI query: {e}")
+    # Search in YouTube index
+    search_query_youtube = {
+        "query": {
+            "script_score": {
+                "query": {"match_all": {}},
+                "script": {
+                    "source": "cosineSimilarity(params.query_vector, 'text_embedding') + 1.0",
+                    "params": {"query_vector": query_emb}
+                }
+            }
+        },
+        "size": 1
+    }
+
+    # Perform search in YouTube index
+    try:
+        response_youtube = es.search(index=youtube_index, body=search_query_youtube)
+        if response_youtube['hits']['hits']:
+            get_text += " " + response_youtube['hits']['hits'][0]['_source']['text']
+        else:
+            get_text += ""
+
+    except Exception as e:
+        st.error(f"Error during YouTube search: {e}")
+
+    if get_text:
+        # Query Mistral AI model to get the answer
+        def query_mistral(payload):
+            API_URL = "https://api-inference.huggingface.co/models/mistralai/Mixtral-8x7B-Instruct-v0.1"
+            API_TOKEN = st.secrets["HUGGINGFACE_API_KEY"]  # Stored in Streamlit secrets
+            headers = {"Authorization": f"Bearer {API_TOKEN}"}
+            response = requests.post(API_URL, headers=headers, json=payload)
+            
+            try:
+                if response.status_code != 200:
+                    return "Error: Unable to get response from the AI model."
+                data = response.json()
+                generated_text = data[0]['generated_text']
+                prompt_index = generated_text.find('[/INST]')
+                if prompt_index != -1:
+                    generated_text = generated_text[prompt_index + len('[/INST]'):]
+                return generated_text
+            except requests.exceptions.RequestException as e:
+                return f"Request exception: {e}"
+            except ValueError as e:
+                return f"Value error: {e}"
+
+        negResponse = "I'm unable to answer the question based on the information I have."
+        prompt = f"[INST] You are a helpful Q&A assistant. Your task is to answer this question: {query}. Use only the information from this text: {get_text}. Provide the answer in normal text format. If the answer is not contained in the text, reply with {negResponse}. [/INST]"
+        max_new_tokens = 2000
+
+        # Get the answer
+        data = query_mistral({"parameters": {"max_new_tokens": max_new_tokens}, "inputs": prompt})
+        st.subheader("Answer:")
+        st.write(data)
     else:
-        st.info("Please enter a valid YouTube video URL.")
+        st.error("No relevant text found for the query.")
+else:
+    st.info("Please upload PDF files or enter a YouTube URL to start.")
