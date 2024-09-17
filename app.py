@@ -195,7 +195,7 @@ if youtube_url:
                 index=youtube_index,
                 mappings={
                     "properties": {
-                        "text": {"type": "text"},
+                        "text": {"type": "text", "analyzer": "standard"},
                         "text_embedding": {"type": "dense_vector", "dims": 384},
                     }
                 }
