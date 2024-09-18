@@ -141,9 +141,12 @@ st.title("Multi-Source Text Extraction")
 
 source_option = st.selectbox("Choose your source", ["Upload PDFs", "Video File", "YouTube Video"])
 
+# Use a flag to check if the data has already been processed to avoid re-indexing
+data_processed = False
+
 if source_option == "Upload PDFs":
     uploaded_files = st.file_uploader("Upload PDF files", type="pdf", accept_multiple_files=True)
-    if uploaded_files:
+    if uploaded_files and not data_processed:
         delete_existing_entries(pdf_index)  # Delete previous entries
         all_text = extract_text_from_pdfs(uploaded_files)
         emb = model.encode(all_text)
@@ -152,11 +155,12 @@ if source_option == "Upload PDFs":
         es.index(index=pdf_index, document=doc)
         es.indices.refresh(index=pdf_index)
         st.success("PDFs processed and indexed successfully!")
+        data_processed = True
         selected_index = pdf_index
 
 elif source_option == "Video File":
     uploaded_file = st.file_uploader("Upload a video file", type=["mp4", "avi", "mov"])
-    if uploaded_file:
+    if uploaded_file and not data_processed:
         delete_existing_entries(video_index)  # Delete previous entries
         video_file_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
         with open(video_file_path, "wb") as f:
@@ -169,12 +173,13 @@ elif source_option == "Video File":
                 st.error(text)
             else:
                 st.success("Video processed and indexed successfully!")
+                data_processed = True  # Set flag to True to prevent reprocessing
             st.write(f"Time taken: {round(time.time() - start_time, 2)} seconds")
         selected_index = video_index
 
 elif source_option == "YouTube Video":
     youtube_url = st.text_input("Enter YouTube Video URL:")
-    if youtube_url:
+    if youtube_url and not data_processed:
         delete_existing_entries(youtube_index)  # Delete previous entries
         with st.spinner('Fetching and processing YouTube transcript...'):
             transcript_text = get_youtube_transcript(youtube_url)
@@ -188,12 +193,14 @@ elif source_option == "YouTube Video":
                 es.indices.refresh(index=youtube_index)
 
                 st.success("YouTube transcript extracted and indexed successfully!")
+                data_processed = True
         selected_index = youtube_index
 
 # User query input for searching indexed data
 query = st.text_input("Enter your question based on the content:")
 
-if query:
+# This part only runs during query; it will not reprocess the data
+if query and data_processed:
     query_emb = model.encode(query)
 
     search_query = {
@@ -213,15 +220,9 @@ if query:
         response = es.search(index=selected_index, body=search_query)
         if response['hits']['hits']:
             get_text = response['hits']['hits'][0]['_source']['text']
-            
-            negResponse = "I'm unable to answer the question based on the information I have."
-            prompt = f"[INST] You are a helpful Q&A assistant. Your task is to answer this question: {query}. Use only the information from this text: {get_text}. Provide the answer in normal text format. If the answer is not contained in the text, reply with {negResponse}. [/INST]"
-            max_new_tokens = 2000
-
-            data = query_mistral({"parameters": {"max_new_tokens": max_new_tokens}, "inputs": prompt})
-            st.subheader("Answer:")
-            st.write(data)
+            st.write("### Search Results")
+            st.write(get_text)
         else:
-            st.error("No relevant text found for the query.")
+            st.write("No relevant content found.")
     except Exception as e:
-        st.error(f"Error during search or Mistral AI query: {e}")
+        st.error(f"Error searching for query: {e}")
