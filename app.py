@@ -120,7 +120,7 @@ def clear_index(index_name):
         # Use delete_by_query to remove all documents in the index
         es.delete_by_query(index=index_name, body={"query": {"match_all": {}}})
         es.indices.refresh(index=index_name)
-        st.write(f"All documents in the index '{index_name}' have been deleted.")
+        # st.write(f"All documents in the index '{index_name}' have been deleted.")
     except Exception as e:
         st.error(f"Error clearing index {index_name}: {e}")
 
@@ -181,7 +181,7 @@ if not st.session_state['file_processed']:
                 es.index(index=youtube_index, document=doc)
                 es.indices.refresh(index=youtube_index)
 
-                st.write("YouTube transcript extracted and new text indexed.")
+                # st.write("YouTube transcript extracted and new text indexed.")
                 st.session_state['file_processed'] = True  # Mark file as processed
             else:
                 st.error("Failed to retrieve YouTube transcript.")
