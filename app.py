@@ -139,7 +139,7 @@ source_option = st.selectbox("Choose your source", ["Upload PDFs", "Video File",
 if source_option == "Upload PDFs":
     uploaded_files = st.file_uploader("Upload PDF files", type="pdf", accept_multiple_files=True)
     if uploaded_files:
-        delete_existing_entries(pdf_index)  # Delete previous entries
+        # delete_existing_entries(pdf_index)  # Delete previous entries
         all_text = extract_text_from_pdfs(uploaded_files)
         emb = model.encode(all_text)
 
@@ -150,7 +150,7 @@ if source_option == "Upload PDFs":
 elif source_option == "Video File":
     uploaded_file = st.file_uploader("Upload a video file", type=["mp4", "avi", "mov"])
     if uploaded_file:
-        delete_existing_entries(video_index)  # Delete previous entries
+        # delete_existing_entries(video_index)  # Delete previous entries
         video_file_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
         with open(video_file_path, "wb") as f:
             f.write(uploaded_file.read())
@@ -161,7 +161,7 @@ elif source_option == "Video File":
 elif source_option == "YouTube Video":
     youtube_url = st.text_input("Enter YouTube Video URL:")
     if youtube_url:
-        delete_existing_entries(youtube_index)  # Delete previous entries
+        # delete_existing_entries(youtube_index)  # Delete previous entries
         transcript_text = get_youtube_transcript(youtube_url)
         if transcript_text:
             emb = model.encode(transcript_text)
