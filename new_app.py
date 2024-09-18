@@ -127,7 +127,7 @@ def delete_existing_entries(index_name):
         st.error(f"Error deleting previous entries from index {index_name}: {e}")
 
 # Sidebar for app logo and name
-st.sidebar.image("/Users/ariz/Desktop/ques-ans-main/6c6337da-c7a2-4c83-b7ab-7ba39fad7d74_0.png", use_column_width=True)  # Add path to your logo image
+st.sidebar.image("6c6337da-c7a2-4c83-b7ab-7ba39fad7d74_0.png", use_column_width=True)  # Add path to your logo image
 st.sidebar.title("QuerySage")
 # st.sidebar.markdown("Extract, Analyze, and Query from Multi-Sources.")
 
