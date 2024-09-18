@@ -152,6 +152,7 @@ if source_option == "Upload PDFs":
         es.index(index=pdf_index, document=doc)
         es.indices.refresh(index=pdf_index)
         st.success("PDFs processed and indexed successfully!")
+        selected_index = pdf_index
 
 elif source_option == "Video File":
     uploaded_file = st.file_uploader("Upload a video file", type=["mp4", "avi", "mov"])
@@ -169,6 +170,7 @@ elif source_option == "Video File":
             else:
                 st.success("Video processed and indexed successfully!")
             st.write(f"Time taken: {round(time.time() - start_time, 2)} seconds")
+        selected_index = video_index
 
 elif source_option == "YouTube Video":
     youtube_url = st.text_input("Enter YouTube Video URL:")
@@ -186,14 +188,13 @@ elif source_option == "YouTube Video":
                 es.indices.refresh(index=youtube_index)
 
                 st.success("YouTube transcript extracted and indexed successfully!")
+        selected_index = youtube_index
 
 # User query input for searching indexed data
 query = st.text_input("Enter your question based on the content:")
 
 if query:
     query_emb = model.encode(query)
-
-    index = st.selectbox("Select index to search", [pdf_index, video_index, youtube_index])
 
     search_query = {
         "query": {
@@ -209,7 +210,7 @@ if query:
     }
 
     try:
-        response = es.search(index=index, body=search_query)
+        response = es.search(index=selected_index, body=search_query)
         if response['hits']['hits']:
             get_text = response['hits']['hits'][0]['_source']['text']
             
