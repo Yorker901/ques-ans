@@ -1,108 +1,213 @@
+import os
+import tempfile
 import streamlit as st
-from pypdf import PdfReader
+from moviepy.editor import VideoFileClip
+import speech_recognition as sr
 from sentence_transformers import SentenceTransformer
 from elasticsearch import Elasticsearch
 import requests
+from PyPDF2 import PdfReader
+import re
+from youtube_transcript_api import YouTubeTranscriptApi
 
-# Streamlit app title
-st.title("PDF Summarization and Q&A - Chat Interface")
+# Set environment variable to avoid TOKENIZERS_PARALLELISM warning
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-# Initialize session state for chat history
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
+# Initialize the Sentence Transformer model
+model = SentenceTransformer('paraphrase-MiniLM-L6-v2')
 
-# File upload
-uploaded_file = st.file_uploader("Upload a PDF file", type="pdf")
+# Elasticsearch connection (using API key stored in Streamlit secrets)
+es = Elasticsearch(
+    cloud_id=st.secrets["ELASTIC_CLOUD_ID"],  
+    api_key=st.secrets["ELASTIC_API_KEY"]
+)
 
-if uploaded_file is not None:
-    # Read the PDF
-    reader = PdfReader(uploaded_file)
-    text = ""
-    for page in reader.pages:
-        text += page.extract_text()
-
-    # Load sentence transformer model
-    model = SentenceTransformer('paraphrase-MiniLM-L6-v2')
-    emb = model.encode(text)
-
-    # Elasticsearch connection (using API key)
-    es = Elasticsearch(
-        cloud_id="ac668387facb455d9201540f7bcdccf3:dXMtY2VudHJhbDEuZ2NwLmNsb3VkLmVzLmlvJDM5OGQ1NGMzMzZlZTQ0YzA5MGVjM2VjYmIwYjc0MWRjJGQ4NDgxNTA2MWM1NDQwYjA4YmE3NTAxMGQ1YzM3MGJl",
-        api_key="bDMyb29aRUJmbEtlQzJiSDlEc0M6U3h1Q2t2UEpUc3lxYnBnWUdXaWl0QQ=="  # Replace with your actual API key
-    )
-
-    # Check if the index exists
-    index = "summarization_pdf"
-    if not es.indices.exists(index=index):
-        # Create the index with the required mappings
-        try:
-            es.indices.create(
-                index=index,
-                mappings={
-                    "properties": {
-                        "text": {"type": "text"},
-                        "text_embedding": {"type": "dense_vector", "dims": 384},
-                    }
-                }
-            )
-            st.success(f"Index '{index}' created successfully!")
-        except Exception as e:
-            st.error(f"Error creating index: {e}")
-    else:
-        st.info(f"Index '{index}' already exists.")
-
-    # Try to index the document
+# Function to interact with Mistral AI
+def query_mistral(payload):
+    API_URL = "https://api-inference.huggingface.co/models/mistralai/Mixtral-8x7B-Instruct-v0.1"
+    API_TOKEN = st.secrets["HUGGINGFACE_API_KEY"]
+    headers = {"Authorization": f"Bearer {API_TOKEN}"}
+    response = requests.post(API_URL, headers=headers, json=payload)
+    
     try:
-        doc = {"text_embedding": emb, "text": text}
-        response = es.index(index=index, document=doc)
-        st.success(f"Document indexed successfully: {response['_id']}")
-    except Exception as e:
-        st.error(f"Error indexing document: {e}")
+        if response.status_code != 200:
+            return "Error: Unable to get response from the AI model."
+        data = response.json()
+        generated_text = data[0]['generated_text']
+        prompt_index = generated_text.find('[/INST]')
+        if prompt_index != -1:
+            generated_text = generated_text[prompt_index + len('[/INST]'):]
+        return generated_text
+    except requests.exceptions.RequestException as e:
+        return f"Request exception: {e}"
+    except ValueError as e:
+        return f"Value error: {e}"
 
-    # Rest of the code for chat interface...
+# Indices for different data types
+pdf_index = "summarization_pdf"
+video_index = "video_transcripts"
+youtube_index = "youtube_transcripts"
 
-# Continue the Streamlit app
-
-# Input box for user queries
-user_input = st.text_input("Ask a question about the PDF:")
-
-if user_input:
-    # Add the user's question to the chat history
-    st.session_state.chat_history.append({"role": "user", "content": user_input})
-
-    # Generate a response using Elasticsearch
+# Function to create Elasticsearch index with required mappings
+def create_index(index_name, dimensions=384):
     try:
-        # Query Elasticsearch with user input
-        query = {
-            "size": 1,
-            "query": {
-                "script_score": {
-                    "query": {"match_all": {}},
-                    "script": {
-                        "source": "cosineSimilarity(params.query_vector, 'text_embedding') + 1.0",
-                        "params": {"query_vector": model.encode(user_input).tolist()},
-                    },
+        es.indices.create(
+            index=index_name,
+            ignore=400,
+            mappings={
+                "properties": {
+                    "text": {"type": "text"},
+                    "text_embedding": {"type": "dense_vector", "dims": dimensions},
                 }
             }
-        }
-
-        response = es.search(index=index, body=query)
-        answer = response['hits']['hits'][0]['_source']['text']
-
-        # Add the AI's response to the chat history
-        st.session_state.chat_history.append({"role": "assistant", "content": answer})
-
+        )
     except Exception as e:
-        st.error(f"Error querying Elasticsearch: {e}")
-        st.session_state.chat_history.append({"role": "assistant", "content": "I couldn't retrieve the answer."})
+        st.error(f"Error creating Elasticsearch index {index_name}: {e}")
 
-# Display the chat history
-for message in st.session_state.chat_history:
-    if message["role"] == "user":
-        st.markdown(f"**You:** {message['content']}")
+# Create indices
+create_index(pdf_index)
+create_index(video_index)
+create_index(youtube_index)
+
+# Function to extract text from video files
+def extract_text_from_video(video_file):
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_audio_file:
+            temp_audio_path = temp_audio_file.name
+
+        clip = VideoFileClip(video_file)
+        audio = clip.audio
+        audio.write_audiofile(temp_audio_path, codec='pcm_s16le')
+
+        recognizer = sr.Recognizer()
+        with sr.AudioFile(temp_audio_path) as source:
+            audio_content = recognizer.record(source)
+        
+        text = recognizer.recognize_google(audio_content)
+        embeddings = model.encode(text)
+
+        os.remove(temp_audio_path)
+
+        doc = {"text": text, "text_embedding": embeddings.tolist()}
+        es.index(index=video_index, document=doc)
+        es.indices.refresh(index=video_index)
+
+        return text
+    except Exception as e:
+        return f"Error extracting text from video: {str(e)}"
+
+# Function to extract text from PDFs
+def extract_text_from_pdfs(uploaded_files):
+    all_text = ""
+    for uploaded_file in uploaded_files:
+        reader = PdfReader(uploaded_file)
+        for page in reader.pages:
+            all_text += page.extract_text()
+    return all_text
+
+def get_youtube_transcript(video_url):
+    match = re.search(r'v=([a-zA-Z0-9_-]+)', video_url)
+    if match:
+        video_id = match.group(1)
+        try:
+            transcript = YouTubeTranscriptApi.get_transcript(video_id)
+            transcript_text = ' '.join([entry['text'] for entry in transcript])
+            return transcript_text
+        except Exception as e:
+            return f"Error retrieving transcript: {str(e)}"
     else:
-        st.markdown(f"**Assistant:** {message['content']}")
+        return "Invalid YouTube URL format. Please provide a valid URL."
 
-# Optionally, clear the chat history
-if st.button("Clear Chat"):
-    st.session_state.chat_history = []
+
+def delete_existing_entries(index_name):
+    try:
+        es.delete_by_query(index=index_name, body={"query": {"match_all": {}}})
+        es.indices.refresh(index=index_name)
+    except Exception as e:
+        st.error(f"Error deleting previous entries from index {index_name}: {e}")
+
+# Sidebar for app logo and name
+st.sidebar.image("/Users/ariz/Desktop/ques-ans-main/6c6337da-c7a2-4c83-b7ab-7ba39fad7d74_0.png", use_column_width=True)  # Add path to your logo image
+st.sidebar.title("QuerySage")
+# st.sidebar.markdown("Extract, Analyze, and Query from Multi-Sources.")
+
+# Streamlit app code
+st.title("Multi-Source Text Extraction")
+
+source_option = st.selectbox("Choose your source", ["Upload PDFs", "Video File", "YouTube Video"])
+
+if source_option == "Upload PDFs":
+    uploaded_files = st.file_uploader("Upload PDF files", type="pdf", accept_multiple_files=True)
+    if uploaded_files:
+        delete_existing_entries(pdf_index)  # Delete previous entries
+        all_text = extract_text_from_pdfs(uploaded_files)
+        emb = model.encode(all_text)
+
+        doc = {"text": all_text, "text_embedding": emb.tolist()}
+        es.index(index=pdf_index, document=doc)
+        es.indices.refresh(index=pdf_index)
+
+elif source_option == "Video File":
+    uploaded_file = st.file_uploader("Upload a video file", type=["mp4", "avi", "mov"])
+    if uploaded_file:
+        delete_existing_entries(video_index)  # Delete previous entries
+        video_file_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
+        with open(video_file_path, "wb") as f:
+            f.write(uploaded_file.read())
+
+        text = extract_text_from_video(video_file_path)
+        st.write("Video transcript extracted, previous entries deleted, and new text indexed.")
+
+elif source_option == "YouTube Video":
+    youtube_url = st.text_input("Enter YouTube Video URL:")
+    if youtube_url:
+        delete_existing_entries(youtube_index)  # Delete previous entries
+        transcript_text = get_youtube_transcript(youtube_url)
+        if transcript_text:
+            emb = model.encode(transcript_text)
+
+            doc = {"text": transcript_text, "text_embedding": emb.tolist()}
+            es.index(index=youtube_index, document=doc)
+            es.indices.refresh(index=youtube_index)
+
+            st.write("YouTube transcript extracted, previous entries deleted, and new text indexed.")
+        else:
+            st.error("Failed to retrieve YouTube transcript.")
+
+# User query input for searching indexed data
+query = st.text_input("Enter your question based on the content:")
+
+if query:
+    query_emb = model.encode(query)
+
+    index = st.selectbox("Select index to search", [pdf_index, video_index, youtube_index])
+
+    search_query = {
+        "query": {
+            "script_score": {
+                "query": {"match_all": {}},
+                "script": {
+                    "source": "cosineSimilarity(params.query_vector, 'text_embedding') + 1.0",
+                    "params": {"query_vector": query_emb}
+                }
+            }
+        },
+        "size": 1
+    }
+
+    try:
+        response = es.search(index=index, body=search_query)
+        if response['hits']['hits']:
+            get_text = response['hits']['hits'][0]['_source']['text']
+            
+            negResponse = "I'm unable to answer the question based on the information I have."
+            prompt = f"[INST] You are a helpful Q&A assistant. Your task is to answer this question: {query}. Use only the information from this text: {get_text}. Provide the answer in normal text format. If the answer is not contained in the text, reply with {negResponse}. [/INST]"
+            max_new_tokens = 2000
+
+            data = query_mistral({"parameters": {"max_new_tokens": max_new_tokens}, "inputs": prompt})
+            st.subheader("Answer:")
+            st.write(data)
+        else:
+            st.error("No relevant text found for the query.")
+    except Exception as e:
+        st.error(f"Error during search or Mistral AI query: {e}")
