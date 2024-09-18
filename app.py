@@ -114,6 +114,15 @@ def get_youtube_transcript(video_url):
     else:
         return "Invalid YouTube URL format. Please provide a valid URL."
 
+# Function to delete all documents from the specified index
+def clear_index(index_name):
+    try:
+        # Use delete_by_query to remove all documents in the index
+        es.delete_by_query(index=index_name, body={"query": {"match_all": {}}})
+        es.indices.refresh(index=index_name)
+        st.write(f"All documents in the index '{index_name}' have been deleted.")
+    except Exception as e:
+        st.error(f"Error clearing index {index_name}: {e}")
 
 # Sidebar for app logo and name
 st.sidebar.image("6c6337da-c7a2-4c83-b7ab-7ba39fad7d74_0.png", use_column_width=True)  # Add path to your logo image
@@ -135,6 +144,7 @@ if not st.session_state['file_processed']:
         if uploaded_files:
             # Create index if it doesn't exist
             create_index(pdf_index)
+            clear_index(pdf_index)
             all_text = extract_text_from_pdfs(uploaded_files)
             emb = model.encode(all_text)
 
@@ -149,6 +159,7 @@ if not st.session_state['file_processed']:
         if uploaded_file:
             # Create index if it doesn't exist
             create_index(video_index)
+            clear_index(video_index)
             video_file_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
             with open(video_file_path, "wb") as f:
                 f.write(uploaded_file.read())
@@ -162,6 +173,7 @@ if not st.session_state['file_processed']:
         if youtube_url:
             # Create index if it doesn't exist
             create_index(youtube_index)
+            clear_index(youtube_index)
             transcript_text = get_youtube_transcript(youtube_url)
             if transcript_text:
                 emb = model.encode(transcript_text)
