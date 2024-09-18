@@ -21,7 +21,53 @@ es = Elasticsearch(
     cloud_id=st.secrets["ELASTIC_CLOUD_ID"],  
     api_key=st.secrets["ELASTIC_API_KEY"]
 )
+# Sidebar for app logo and name
+st.sidebar.image("6c6337da-c7a2-4c83-b7ab-7ba39fad7d74_0.png", use_column_width=True)  # Add path to your logo image
+st.sidebar.title("QuerySage")
+# st.sidebar.markdown("Extract, Analyze, and Query from Multi-Sources.")
+# Streamlit app code
+st.title("Multi-Source Text Extraction")
 
+source_option = st.selectbox("Choose your source", ["Upload PDFs", "Video File", "YouTube Video"])
+
+if source_option == "Upload PDFs":
+    uploaded_files = st.file_uploader("Upload PDF files", type="pdf", accept_multiple_files=True)
+    if uploaded_files:
+        delete_existing_entries(pdf_index)  # Delete previous entries
+        all_text = extract_text_from_pdfs(uploaded_files)
+        emb = model.encode(all_text)
+
+        doc = {"text": all_text, "text_embedding": emb.tolist()}
+        es.index(index=pdf_index, document=doc)
+        es.indices.refresh(index=pdf_index)
+
+elif source_option == "Video File":
+    uploaded_file = st.file_uploader("Upload a video file", type=["mp4", "avi", "mov"])
+    if uploaded_file:
+        delete_existing_entries(video_index)  # Delete previous entries
+        video_file_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
+        with open(video_file_path, "wb") as f:
+            f.write(uploaded_file.read())
+
+        text = extract_text_from_video(video_file_path)
+        st.write("Video transcript extracted, previous entries deleted, and new text indexed.")
+
+elif source_option == "YouTube Video":
+    youtube_url = st.text_input("Enter YouTube Video URL:")
+    if youtube_url:
+        delete_existing_entries(youtube_index)  # Delete previous entries
+        transcript_text = get_youtube_transcript(youtube_url)
+        if transcript_text:
+            emb = model.encode(transcript_text)
+
+            doc = {"text": transcript_text, "text_embedding": emb.tolist()}
+            es.index(index=youtube_index, document=doc)
+            es.indices.refresh(index=youtube_index)
+
+            st.write("YouTube transcript extracted, previous entries deleted, and new text indexed.")
+        else:
+            st.error("Failed to retrieve YouTube transcript.")
+            
 # Function to interact with Mistral AI
 def query_mistral(payload):
     API_URL = "https://api-inference.huggingface.co/models/mistralai/Mixtral-8x7B-Instruct-v0.1"
@@ -126,53 +172,9 @@ def delete_existing_entries(index_name):
     except Exception as e:
         st.error(f"Error deleting previous entries from index {index_name}: {e}")
 
-# Sidebar for app logo and name
-st.sidebar.image("6c6337da-c7a2-4c83-b7ab-7ba39fad7d74_0.png", use_column_width=True)  # Add path to your logo image
-st.sidebar.title("QuerySage")
-# st.sidebar.markdown("Extract, Analyze, and Query from Multi-Sources.")
 
-# Streamlit app code
-st.title("Multi-Source Text Extraction")
 
-source_option = st.selectbox("Choose your source", ["Upload PDFs", "Video File", "YouTube Video"])
 
-if source_option == "Upload PDFs":
-    uploaded_files = st.file_uploader("Upload PDF files", type="pdf", accept_multiple_files=True)
-    if uploaded_files:
-        # delete_existing_entries(pdf_index)  # Delete previous entries
-        all_text = extract_text_from_pdfs(uploaded_files)
-        emb = model.encode(all_text)
-
-        doc = {"text": all_text, "text_embedding": emb.tolist()}
-        es.index(index=pdf_index, document=doc)
-        es.indices.refresh(index=pdf_index)
-
-elif source_option == "Video File":
-    uploaded_file = st.file_uploader("Upload a video file", type=["mp4", "avi", "mov"])
-    if uploaded_file:
-        # delete_existing_entries(video_index)  # Delete previous entries
-        video_file_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
-        with open(video_file_path, "wb") as f:
-            f.write(uploaded_file.read())
-
-        text = extract_text_from_video(video_file_path)
-        st.write("Video transcript extracted, previous entries deleted, and new text indexed.")
-
-elif source_option == "YouTube Video":
-    youtube_url = st.text_input("Enter YouTube Video URL:")
-    if youtube_url:
-        # delete_existing_entries(youtube_index)  # Delete previous entries
-        transcript_text = get_youtube_transcript(youtube_url)
-        if transcript_text:
-            emb = model.encode(transcript_text)
-
-            doc = {"text": transcript_text, "text_embedding": emb.tolist()}
-            es.index(index=youtube_index, document=doc)
-            es.indices.refresh(index=youtube_index)
-
-            st.write("YouTube transcript extracted, previous entries deleted, and new text indexed.")
-        else:
-            st.error("Failed to retrieve YouTube transcript.")
 
 # User query input for searching indexed data
 query = st.text_input("Enter your question based on the content:")
