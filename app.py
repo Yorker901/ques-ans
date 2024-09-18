@@ -9,6 +9,7 @@ import requests
 from PyPDF2 import PdfReader
 import re
 from youtube_transcript_api import YouTubeTranscriptApi
+import time
 
 # Set environment variable to avoid TOKENIZERS_PARALLELISM warning
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -72,6 +73,7 @@ create_index(youtube_index)
 # Function to extract text from video files
 def extract_text_from_video(video_file):
     try:
+        # Convert video to audio and transcribe
         with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_audio_file:
             temp_audio_path = temp_audio_file.name
 
@@ -93,8 +95,12 @@ def extract_text_from_video(video_file):
         es.indices.refresh(index=video_index)
 
         return text
+    except sr.UnknownValueError:
+        return "Error: Speech was unintelligible."
+    except sr.RequestError as e:
+        return f"Error: Could not request results from Google Speech Recognition service; {e}"
     except Exception as e:
-        return f"Error extracting text from video: {str(e)}"
+        return f"Error processing video: {str(e)}"
 
 # Function to extract text from PDFs
 def extract_text_from_pdfs(uploaded_files):
@@ -129,7 +135,6 @@ def delete_existing_entries(index_name):
 # Sidebar for app logo and name
 st.sidebar.image("6c6337da-c7a2-4c83-b7ab-7ba39fad7d74_0.png", use_column_width=True)  # Add path to your logo image
 st.sidebar.title("QuerySage")
-# st.sidebar.markdown("Extract, Analyze, and Query from Multi-Sources.")
 
 # Streamlit app code
 st.title("Multi-Source Text Extraction")
@@ -146,6 +151,7 @@ if source_option == "Upload PDFs":
         doc = {"text": all_text, "text_embedding": emb.tolist()}
         es.index(index=pdf_index, document=doc)
         es.indices.refresh(index=pdf_index)
+        st.success("PDFs processed and indexed successfully!")
 
 elif source_option == "Video File":
     uploaded_file = st.file_uploader("Upload a video file", type=["mp4", "avi", "mov"])
@@ -155,25 +161,31 @@ elif source_option == "Video File":
         with open(video_file_path, "wb") as f:
             f.write(uploaded_file.read())
 
-        text = extract_text_from_video(video_file_path)
-        st.write("Done")
-        # st.write("Video transcript extracted, previous entries deleted, and new text indexed.")
+        with st.spinner('Processing video and extracting text...'):
+            start_time = time.time()
+            text = extract_text_from_video(video_file_path)
+            if "Error" in text:
+                st.error(text)
+            else:
+                st.success("Video processed and indexed successfully!")
+            st.write(f"Time taken: {round(time.time() - start_time, 2)} seconds")
 
 elif source_option == "YouTube Video":
     youtube_url = st.text_input("Enter YouTube Video URL:")
     if youtube_url:
         delete_existing_entries(youtube_index)  # Delete previous entries
-        transcript_text = get_youtube_transcript(youtube_url)
-        if transcript_text:
-            emb = model.encode(transcript_text)
+        with st.spinner('Fetching and processing YouTube transcript...'):
+            transcript_text = get_youtube_transcript(youtube_url)
+            if "Error" in transcript_text:
+                st.error(transcript_text)
+            else:
+                emb = model.encode(transcript_text)
 
-            doc = {"text": transcript_text, "text_embedding": emb.tolist()}
-            es.index(index=youtube_index, document=doc)
-            es.indices.refresh(index=youtube_index)
+                doc = {"text": transcript_text, "text_embedding": emb.tolist()}
+                es.index(index=youtube_index, document=doc)
+                es.indices.refresh(index=youtube_index)
 
-            st.write("YouTube transcript extracted, previous entries deleted, and new text indexed.")
-        else:
-            st.error("Failed to retrieve YouTube transcript.")
+                st.success("YouTube transcript extracted and indexed successfully!")
 
 # User query input for searching indexed data
 query = st.text_input("Enter your question based on the content:")
