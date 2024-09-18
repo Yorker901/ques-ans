@@ -218,9 +218,8 @@ if query:
         response = es.search(index=index, body=search_query)
         if response['hits']['hits']:
             get_text = response['hits']['hits'][0]['_source']['text']
-            
             negResponse = "I'm unable to answer the question based on the information I have."
-            prompt = f"[INST] You are a helpful Q&A assistant. Your task is to answer this question: {query}. Use only the information from this text: {get_text}. Provide the answer in normal text format. If the answer is not contained in the text, reply with {
+            prompt = f"[INST] You are a helpful Q&A assistant. Your task is to answer this question: {query}. Use only the information from this text: {get_text}. Provide the answer in normal text format. If the answer is not contained in the text, reply with '{negResponse}'. [/INST]"
             max_new_tokens = 2000
             data = query_mistral({"parameters": {"max_new_tokens": max_new_tokens}, "inputs": prompt})
             st.subheader("Answer:")
