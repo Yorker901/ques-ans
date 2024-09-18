@@ -9,7 +9,6 @@ import requests
 from PyPDF2 import PdfReader
 import re
 from youtube_transcript_api import YouTubeTranscriptApi
-import time
 
 # Set environment variable to avoid TOKENIZERS_PARALLELISM warning
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -73,7 +72,6 @@ create_index(youtube_index)
 # Function to extract text from video files
 def extract_text_from_video(video_file):
     try:
-        # Convert video to audio and transcribe
         with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_audio_file:
             temp_audio_path = temp_audio_file.name
 
@@ -95,12 +93,8 @@ def extract_text_from_video(video_file):
         es.indices.refresh(index=video_index)
 
         return text
-    except sr.UnknownValueError:
-        return "Error: Speech was unintelligible."
-    except sr.RequestError as e:
-        return f"Error: Could not request results from Google Speech Recognition service; {e}"
     except Exception as e:
-        return f"Error processing video: {str(e)}"
+        return f"Error extracting text from video: {str(e)}"
 
 # Function to extract text from PDFs
 def extract_text_from_pdfs(uploaded_files):
@@ -128,69 +122,57 @@ def get_youtube_transcript(video_url):
 def delete_existing_entries(index_name):
     try:
         es.delete_by_query(index=index_name, body={"query": {"match_all": {}}})
-        es.indices.refresh(index_name)
+        es.indices.refresh(index=index_name)
     except Exception as e:
         st.error(f"Error deleting previous entries from index {index_name}: {e}")
 
 # Sidebar for app logo and name
 st.sidebar.image("6c6337da-c7a2-4c83-b7ab-7ba39fad7d74_0.png", use_column_width=True)  # Add path to your logo image
 st.sidebar.title("QuerySage")
+# st.sidebar.markdown("Extract, Analyze, and Query from Multi-Sources.")
 
 # Streamlit app code
 st.title("Multi-Source Text Extraction")
 
 source_option = st.selectbox("Choose your source", ["Upload PDFs", "Video File", "YouTube Video"])
 
-data_processed = False
-
 if source_option == "Upload PDFs":
     uploaded_files = st.file_uploader("Upload PDF files", type="pdf", accept_multiple_files=True)
-    if uploaded_files and not data_processed:
+    if uploaded_files:
         delete_existing_entries(pdf_index)  # Delete previous entries
         all_text = extract_text_from_pdfs(uploaded_files)
         emb = model.encode(all_text)
 
         doc = {"text": all_text, "text_embedding": emb.tolist()}
         es.index(index=pdf_index, document=doc)
-        es.indices.refresh(pdf_index)
-        st.success("PDFs processed and indexed successfully!")
-        data_processed = True
+        es.indices.refresh(index=pdf_index)
 
 elif source_option == "Video File":
     uploaded_file = st.file_uploader("Upload a video file", type=["mp4", "avi", "mov"])
-    if uploaded_file and not data_processed:
+    if uploaded_file:
         delete_existing_entries(video_index)  # Delete previous entries
         video_file_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
         with open(video_file_path, "wb") as f:
             f.write(uploaded_file.read())
 
-        with st.spinner('Processing video and extracting text...'):
-            start_time = time.time()
-            text = extract_text_from_video(video_file_path)
-            if "Error" in text:
-                st.error(text)
-            else:
-                st.success("Video processed and indexed successfully!")
-                data_processed = True
-            st.write(f"Time taken: {round(time.time() - start_time, 2)} seconds")
+        text = extract_text_from_video(video_file_path)
+        st.write("Video transcript extracted, previous entries deleted, and new text indexed.")
 
 elif source_option == "YouTube Video":
     youtube_url = st.text_input("Enter YouTube Video URL:")
-    if youtube_url and not data_processed:
+    if youtube_url:
         delete_existing_entries(youtube_index)  # Delete previous entries
-        with st.spinner('Fetching and processing YouTube transcript...'):
-            transcript_text = get_youtube_transcript(youtube_url)
-            if "Error" in transcript_text:
-                st.error(transcript_text)
-            else:
-                emb = model.encode(transcript_text)
+        transcript_text = get_youtube_transcript(youtube_url)
+        if transcript_text:
+            emb = model.encode(transcript_text)
 
-                doc = {"text": transcript_text, "text_embedding": emb.tolist()}
-                es.index(index=youtube_index, document=doc)
-                es.indices.refresh(youtube_index)
+            doc = {"text": transcript_text, "text_embedding": emb.tolist()}
+            es.index(index=youtube_index, document=doc)
+            es.indices.refresh(index=youtube_index)
 
-                st.success("YouTube transcript extracted and indexed successfully!")
-                data_processed = True
+            st.write("YouTube transcript extracted, previous entries deleted, and new text indexed.")
+        else:
+            st.error("Failed to retrieve YouTube transcript.")
 
 # User query input for searching indexed data
 query = st.text_input("Enter your question based on the content:")
@@ -198,8 +180,13 @@ query = st.text_input("Enter your question based on the content:")
 if query:
     query_emb = model.encode(query)
 
-    # Allowing the user to select which index to search
-    index = st.selectbox("Select index to search", [pdf_index, video_index, youtube_index])
+    # Automatically select index based on the user's earlier choice of source
+    if source_option == "Upload PDFs":
+        index = pdf_index
+    elif source_option == "Video File":
+        index = video_index
+    elif source_option == "YouTube Video":
+        index = youtube_index
 
     search_query = {
         "query": {
@@ -218,9 +205,11 @@ if query:
         response = es.search(index=index, body=search_query)
         if response['hits']['hits']:
             get_text = response['hits']['hits'][0]['_source']['text']
+            
             negResponse = "I'm unable to answer the question based on the information I have."
-            prompt = f"[INST] You are a helpful Q&A assistant. Your task is to answer this question: {query}. Use only the information from this text: {get_text}. Provide the answer in normal text format. If the answer is not contained in the text, reply with '{negResponse}'. [/INST]"
+            prompt = f"[INST] You are a helpful Q&A assistant. Your task is to answer this question: {query}. Use only the information from this text: {get_text}. Provide the answer in normal text format. If the answer is not contained in the text, reply with {negResponse}. [/INST]"
             max_new_tokens = 2000
+
             data = query_mistral({"parameters": {"max_new_tokens": max_new_tokens}, "inputs": prompt})
             st.subheader("Answer:")
             st.write(data)
